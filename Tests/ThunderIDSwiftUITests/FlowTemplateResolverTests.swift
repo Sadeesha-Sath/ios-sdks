@@ -1,6 +1,7 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
+@testable import ThunderID
 import XCTest
 @testable import ThunderIDSwiftUI
 
@@ -65,5 +66,33 @@ final class FlowTemplateResolverTests: XCTestCase {
     func testReturnsEmptyStringForMissingTranslationKey() {
         let resolver = FlowTemplateResolver(meta: [:])
         XCTAssertEqual(resolver.resolve("{{ t(signin:missing.key) }}"), "")
+    }
+
+    func testTranslatesAFlowErrorKeyWithItsParams() {
+        let resolver = FlowTemplateResolver(meta: [
+            "i18n": [
+                "translations": [
+                    "errors": ["user.exists": "{{param(name)}} existe déjà"],
+                    "system": ["flow.invalid": "Flux invalide"]
+                ]
+            ]
+        ])
+
+        XCTAssertEqual(
+            resolver.translate(
+                FlowErrorText(key: "errors.user.exists", defaultValue: "alice already exists", params: ["name": "alice"])
+            ),
+            "alice existe déjà"
+        )
+        // A key with no translation of its own is retried under the system namespace.
+        XCTAssertEqual(
+            resolver.translate(FlowErrorText(key: "flow.invalid", defaultValue: "Invalid flow", params: nil)),
+            "Flux invalide"
+        )
+        // A placeholder left without a param, or a key with no translation, leaves the caller to its fallback.
+        XCTAssertNil(resolver.translate(FlowErrorText(key: "errors.user.exists", defaultValue: "x", params: nil)))
+        XCTAssertNil(resolver.translate(FlowErrorText(key: "errors.missing", defaultValue: "Missing", params: nil)))
+        XCTAssertNil(resolver.translate(FlowErrorText(key: nil, defaultValue: "No key", params: nil)))
+        XCTAssertNil(resolver.translate(nil))
     }
 }

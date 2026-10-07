@@ -16,6 +16,7 @@ import Foundation
 /// `FlowTemplateResolver` (`sdks/flutter/lib/src/flow_template_resolver.dart`).
 public struct FlowTemplateResolver {
     private static let templateRegex = try? NSRegularExpression(pattern: "\\{\\{\\s*(.*?)\\s*\\}\\}")
+    private static let paramRegex = try? NSRegularExpression(pattern: "\\{\\{\\s*param\\(\\s*(\\w+)\\s*\\)\\s*\\}\\}")
 
     private let meta: [String: Any]
 
@@ -45,6 +46,35 @@ public struct FlowTemplateResolver {
         }
         result += text[lastEnd...]
         return result
+    }
+
+    /// The translation of a flow error's `key`, with its `params` substituted, or nil when there is
+    /// none to show. As in the JavaScript SDK, the key is looked up as `<namespace>.<key>` and then
+    /// under the `system` namespace, and a translation that still has a placeholder is not used.
+    public func translate(_ text: FlowErrorText?) -> String? {
+        guard let key = text?.key, !key.isEmpty, let paramRegex = Self.paramRegex else {
+            return nil
+        }
+        for candidate in [key, "system.\(key)"] {
+            guard let dot = candidate.firstIndex(of: ".") else {
+                continue
+            }
+            var translation = resolveTranslation(
+                "\(candidate[..<dot]):\(candidate[candidate.index(after: dot)...])"
+            )
+            for (name, value) in text?.params ?? [:] {
+                translation = translation.replacingOccurrences(
+                    of: "\\{\\{\\s*param\\(\\s*\(NSRegularExpression.escapedPattern(for: name))\\s*\\)\\s*\\}\\}",
+                    with: NSRegularExpression.escapedTemplate(for: value),
+                    options: .regularExpression
+                )
+            }
+            let range = NSRange(translation.startIndex..<translation.endIndex, in: translation)
+            if !translation.isEmpty, paramRegex.firstMatch(in: translation, range: range) == nil {
+                return translation
+            }
+        }
+        return nil
     }
 
     private func replacement(for match: NSTextCheckingResult, in text: String) -> String {
